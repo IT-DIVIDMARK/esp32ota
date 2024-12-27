@@ -17,6 +17,7 @@ const int ledPin = 2;
 // Current Firmware Version
 #define FIRMWARE_VERSION "1.0.1"
 
+// OTA Firmware Download
 void downloadFirmware(String url) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -40,6 +41,7 @@ void downloadFirmware(String url) {
 
       if (written == contentLength && Update.end()) {
         Serial.println("Firmware update successful! Rebooting...");
+        delay(1000);
         ESP.restart();
       } else {
         Serial.print("Update failed. Written: ");
@@ -57,6 +59,7 @@ void downloadFirmware(String url) {
   http.end();
 }
 
+// OTA Update Check
 bool checkForUpdate() {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -97,12 +100,12 @@ bool checkForUpdate() {
   return false;
 }
 
+// Setup Function
 void setup() {
   Serial.begin(115200);
-  WiFi.begin(ssid, password);
-
   pinMode(ledPin, OUTPUT);
 
+  WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     digitalWrite(ledPin, !digitalRead(ledPin)); // Blink LED while connecting
     delay(500);
@@ -110,15 +113,21 @@ void setup() {
   }
   Serial.println("Connected to WiFi!");
 
+  // Check for Update Only Once
   if (checkForUpdate()) {
     downloadFirmware(firmwareURL);
   }
 }
 
+// Main Loop
 void loop() {
   // Blink onboard LED every 1 second
-  digitalWrite(ledPin, HIGH);
-  delay(500);
-  digitalWrite(ledPin, LOW);
-  delay(500);
+  static unsigned long previousMillis = 0;
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= 1000) {
+    previousMillis = currentMillis;
+    digitalWrite(ledPin, !digitalRead(ledPin));
+    Serial.println("Running main loop...");
+  }
 }
