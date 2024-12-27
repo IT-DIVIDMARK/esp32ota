@@ -15,7 +15,7 @@ String firmwareURL;
 const int ledPin = 2;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.1"
+#define FIRMWARE_VERSION "1.0.2"
 
 // OTA Firmware Download
 void downloadFirmware(String url) {
