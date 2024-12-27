@@ -15,7 +15,7 @@ String firmwareURL;
 const int ledPin = 2;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.0.1"
 
 void downloadFirmware(String url) {
   HTTPClient http;
@@ -118,7 +118,7 @@ void setup() {
 void loop() {
   // Blink onboard LED every 1 second
   digitalWrite(ledPin, HIGH);
-  delay(1000);
+  delay(500);
   digitalWrite(ledPin, LOW);
-  delay(1000);
+  delay(500);
 }
