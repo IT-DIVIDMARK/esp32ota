@@ -1,5 +1,5 @@
 {
     "version": "1.0.2",
-    "firmware": "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/blob/main/sketch_dec27a/sketch_dec27a.ino.esp32.bin"
+    "firmware": "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/display.ino.esp32.bin"
   }
-
+  
