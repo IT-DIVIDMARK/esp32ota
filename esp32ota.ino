@@ -5,10 +5,11 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
+#include <Preferences.h>
 
 // WiFi credentials
-const char* ssid = "admin";
-const char* password = "password";
+const char* defaultSSID = "admin";
+const char* defaultPassword = "password";
 
 // URLs
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
@@ -18,12 +19,15 @@ String firmwareURL;
 const int ledPin = 2;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.3"
+#define FIRMWARE_VERSION "1.0.4"
 
 // Display configuration
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// Preferences instance to store Wi-Fi credentials
+Preferences preferences;
 
 // OTA Firmware Download
 void downloadFirmware(String url) {
@@ -130,6 +134,47 @@ void displayFirmwareVersion() {
   display.display();
 }
 
+// WiFi Connect Function
+void connectToWiFi(String newSSID, String newPassword) {
+  WiFi.begin(newSSID.c_str(), newPassword.c_str());
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {  // Retry for 30 seconds
+    delay(500);
+    attempts++;
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected to WiFi!");
+    display.setCursor(0, 50);
+    display.println("WiFi Connected!");
+    display.display();
+  } else {
+    Serial.println("Failed to connect to WiFi.");
+    display.setCursor(0, 50);
+    display.println("WiFi Connect Failed!");
+    display.display();
+  }
+}
+
+// Save WiFi credentials in Preferences
+void saveWiFiCredentials(String ssid, String password) {
+  preferences.begin("wifi", false);  // "wifi" namespace
+  preferences.putString("ssid", ssid);
+  preferences.putString("password", password);
+  preferences.end();
+}
+
+// Load WiFi credentials from Preferences
+bool loadWiFiCredentials(String &ssid, String &password) {
+  preferences.begin("wifi", true);  // "wifi" namespace (read-only)
+  ssid = preferences.getString("ssid", "");
+  password = preferences.getString("password", "");
+  preferences.end();
+
+  return ssid.length() > 0 && password.length() > 0;
+}
+
 // Setup Function
 void setup() {
   Serial.begin(115200);
@@ -144,24 +189,79 @@ void setup() {
 
   displayFirmwareVersion();
 
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(ledPin, !digitalRead(ledPin)); // Blink LED while connecting
+  // Try to connect to default WiFi
+  WiFi.begin(defaultSSID, defaultPassword);
+  int connectAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && connectAttempts < 20) {  // Wait for 10 seconds
     delay(500);
-    Serial.println("Connecting to WiFi...");
+    connectAttempts++;
+    Serial.print(".");
     display.setCursor(0, 50);
     display.println("Connecting WiFi...");
     display.display();
   }
-  Serial.println("Connected to WiFi!");
-  display.setCursor(0, 50);
-  display.println("WiFi Connected!");
-  display.display();
-  delay(2000);
 
-  // Check for Update Only Once
-  if (checkForUpdate()) {
-    downloadFirmware(firmwareURL);
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected to WiFi!");
+    display.setCursor(0, 50);
+    display.println("WiFi Connected!");
+    display.display();
+    delay(2000);
+
+    // Check for Update Only Once
+    if (checkForUpdate()) {
+      downloadFirmware(firmwareURL);
+    }
+  } else {
+    Serial.println("Failed to connect to default WiFi.");
+    display.setCursor(0, 50);
+    display.println("WiFi Connect Failed!");
+    display.display();
+    delay(2000);
+
+    // Try to connect to saved Wi-Fi credentials
+    String savedSSID, savedPassword;
+    if (loadWiFiCredentials(savedSSID, savedPassword)) {
+      Serial.println("Trying to connect to saved WiFi...");
+      connectToWiFi(savedSSID, savedPassword);
+      if (WiFi.status() == WL_CONNECTED) {
+        // Check for OTA update
+        if (checkForUpdate()) {
+          downloadFirmware(firmwareURL);
+        }
+      }
+    } else {
+      Serial.println("No saved Wi-Fi credentials found.");
+      display.setCursor(0, 50);
+      display.println("No WiFi Credentials!");
+      display.display();
+      delay(2000);
+
+      // Prompt user for new Wi-Fi credentials
+      String newSSID, newPassword;
+      Serial.println("Enter SSID: ");
+      while (Serial.available() == 0) {}  // Wait for SSID input
+      newSSID = Serial.readStringUntil('\n');
+      
+      Serial.println("Enter Password: ");
+      while (Serial.available() == 0) {}  // Wait for password input
+      newPassword = Serial.readStringUntil('\n');
+
+      // Trim any unnecessary newline or spaces
+      newSSID.trim();
+      newPassword.trim();
+
+      // Save credentials
+      saveWiFiCredentials(newSSID, newPassword);
+
+      // Connect to the new Wi-Fi network
+      connectToWiFi(newSSID, newPassword);
+
+      // After connection, check for OTA update
+      if (WiFi.status() == WL_CONNECTED && checkForUpdate()) {
+        downloadFirmware(firmwareURL);
+      }
+    }
   }
 }
 
