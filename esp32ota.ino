@@ -2,6 +2,9 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Wire.h>
 
 // WiFi credentials
 const char* ssid = "admin";
@@ -15,7 +18,12 @@ String firmwareURL;
 const int ledPin = 2;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.1"
+#define FIRMWARE_VERSION "1.0.3"
+
+// Display configuration
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // OTA Firmware Download
 void downloadFirmware(String url) {
@@ -41,7 +49,13 @@ void downloadFirmware(String url) {
 
       if (written == contentLength && Update.end()) {
         Serial.println("Firmware update successful! Rebooting...");
-        delay(1000);
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println("Firmware Update Done!");
+        display.display();
+        delay(2000);
         ESP.restart();
       } else {
         Serial.print("Update failed. Written: ");
@@ -87,6 +101,10 @@ bool checkForUpdate() {
 
     if (latestVersion != FIRMWARE_VERSION) {
       Serial.println("New firmware available, starting OTA...");
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.println("OTA Update Available");
+      display.display();
       return true;
     } else {
       Serial.println("Firmware is up to date.");
@@ -100,18 +118,46 @@ bool checkForUpdate() {
   return false;
 }
 
+// Display Firmware Version
+void displayFirmwareVersion() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Firmware Version:");
+  display.setTextSize(2);
+  display.println(FIRMWARE_VERSION);
+  display.display();
+}
+
 // Setup Function
 void setup() {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
+
+  // Initialize Display
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Default I2C address 0x3C
+    Serial.println("SSD1306 allocation failed");
+    while (1);
+  }
+  Serial.println("Display initialized");
+
+  displayFirmwareVersion();
 
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     digitalWrite(ledPin, !digitalRead(ledPin)); // Blink LED while connecting
     delay(500);
     Serial.println("Connecting to WiFi...");
+    display.setCursor(0, 50);
+    display.println("Connecting WiFi...");
+    display.display();
   }
   Serial.println("Connected to WiFi!");
+  display.setCursor(0, 50);
+  display.println("WiFi Connected!");
+  display.display();
+  delay(2000);
 
   // Check for Update Only Once
   if (checkForUpdate()) {
@@ -129,5 +175,10 @@ void loop() {
     previousMillis = currentMillis;
     digitalWrite(ledPin, !digitalRead(ledPin));
     Serial.println("Running main loop...");
+    display.clearDisplay();
+    displayFirmwareVersion();
+    display.setCursor(0, 50);
+    display.println("Running Loop...");
+    display.display();
   }
 }
