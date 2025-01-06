@@ -1,5 +1,4 @@
 {
   "version": "1.0.2",
-  "firmware": "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/esp32ota.ino.esp32.bin"
+  "firmware": "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/blob/main/displayLest/display/display.ino.esp32.bin"
 }
-display lest/display/display.ino.esp32.bin
