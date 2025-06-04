@@ -1,53 +1,68 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
-#include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <Preferences.h>
+#include <WebServer.h>
 
 // WiFi credentials
 const char* defaultSSID = "admin";
 const char* defaultPassword = "password";
 
-// URLs
+// OTA Version check URL
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
 String firmwareURL;
 
 // Pins
 const int ledPin = 4;
 
-// Firmware version
-#define FIRMWARE_VERSION "1.0.9"
+// Current Firmware Version
+#define FIRMWARE_VERSION "1.0.10"
 
-// OLED Display config
+// Display config
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Preferences
+// Preferences instance
 Preferences preferences;
 
-// WebServer
+// Web server instance
 WebServer server(80);
 
-// Web Interface HTML
-const char* htmlPage = R"rawliteral(
-<!DOCTYPE html>
-<html>
-  <head><title>ESP32 LED Control</title></head>
-  <body style="text-align:center;">
-    <h2>LED Control Panel</h2>
-    <button onclick="fetch('/on')">LED ON</button>
-    <button onclick="fetch('/off')">LED OFF</button>
-    <button onclick="fetch('/toggle')">TOGGLE LED</button>
-  </body>
-</html>
-)rawliteral";
+// Web page handlers
+void handleRoot() {
+  String html = "<html><head><title>ESP32 LED Control</title></head><body>";
+  html += "<h1>LED Control</h1>";
+  html += "<p><a href=\"/led/on\"><button>Turn LED ON</button></a></p>";
+  html += "<p><a href=\"/led/off\"><button>Turn LED OFF</button></a></p>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
 
-// OTA Firmware Download
+void handleLEDOn() {
+  digitalWrite(ledPin, HIGH);
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleLEDOff() {
+  digitalWrite(ledPin, LOW);
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void startWebServer() {
+  server.on("/", handleRoot);
+  server.on("/led/on", handleLEDOn);
+  server.on("/led/off", handleLEDOff);
+  server.begin();
+  Serial.println("Web server started.");
+}
+
 void downloadFirmware(String url) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -56,13 +71,7 @@ void downloadFirmware(String url) {
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
     int contentLength = http.getSize();
-    Serial.print("Firmware Size: ");
-    Serial.println(contentLength);
-
-    if (contentLength <= 0) {
-      Serial.println("Invalid firmware size");
-      return;
-    }
+    if (contentLength <= 0) return;
 
     bool canBegin = Update.begin(contentLength);
     if (canBegin) {
@@ -70,32 +79,18 @@ void downloadFirmware(String url) {
       size_t written = Update.writeStream(client);
 
       if (written == contentLength && Update.end()) {
-        Serial.println("Firmware update successful! Rebooting...");
         display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
         display.setCursor(0, 0);
-        display.println("Firmware Update Done!");
+        display.println("Firmware Updated!");
         display.display();
         delay(2000);
         ESP.restart();
-      } else {
-        Serial.print("Update failed. Written: ");
-        Serial.println(written);
-        Serial.println(Update.errorString());
       }
-    } else {
-      Serial.println("Not enough space for OTA update.");
     }
-  } else {
-    Serial.print("HTTP error: ");
-    Serial.println(httpCode);
   }
-
   http.end();
 }
 
-// OTA Update Check
 bool checkForUpdate() {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -106,45 +101,20 @@ bool checkForUpdate() {
     String payload = http.getString();
     StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, payload);
-
-    if (error) {
-      Serial.print("JSON Parsing Error: ");
-      Serial.println(error.c_str());
-      return false;
-    }
+    if (error) return false;
 
     String latestVersion = doc["version"];
     firmwareURL = doc["firmware"].as<String>();
 
-    Serial.print("Current Version: ");
-    Serial.println(FIRMWARE_VERSION);
-    Serial.print("Latest Version: ");
-    Serial.println(latestVersion);
-
-    if (latestVersion != FIRMWARE_VERSION) {
-      Serial.println("New firmware available, starting OTA...");
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.println("OTA Update Available");
-      display.display();
-      return true;
-    } else {
-      Serial.println("Firmware is up to date.");
-    }
-  } else {
-    Serial.print("HTTP error: ");
-    Serial.println(httpCode);
+    if (latestVersion != FIRMWARE_VERSION) return true;
   }
-
   http.end();
   return false;
 }
 
-// Display Firmware Version
 void displayFirmwareVersion() {
   display.clearDisplay();
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.println("Firmware Version:");
   display.setTextSize(2);
@@ -152,32 +122,22 @@ void displayFirmwareVersion() {
   display.display();
 }
 
-// Web server
-void startWebServer() {
-  server.on("/", HTTP_GET, []() {
-    server.send(200, "text/html", htmlPage);
-  });
-
-  server.on("/on", HTTP_GET, []() {
-    digitalWrite(ledPin, HIGH);
-    server.send(200, "text/plain", "LED ON");
-  });
-
-  server.on("/off", HTTP_GET, []() {
-    digitalWrite(ledPin, LOW);
-    server.send(200, "text/plain", "LED OFF");
-  });
-
-  server.on("/toggle", HTTP_GET, []() {
-    digitalWrite(ledPin, !digitalRead(ledPin));
-    server.send(200, "text/plain", "LED TOGGLED");
-  });
-
-  server.begin();
-  Serial.println("Web server started.");
+void connectToWiFi(String ssid, String password) {
+  WiFi.begin(ssid.c_str(), password.c_str());
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    attempts++;
+    Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi Connected!");
+    display.setCursor(0, 50);
+    display.println("WiFi Connected!");
+    display.display();
+  }
 }
 
-// Save WiFi credentials
 void saveWiFiCredentials(String ssid, String password) {
   preferences.begin("wifi", false);
   preferences.putString("ssid", ssid);
@@ -185,7 +145,6 @@ void saveWiFiCredentials(String ssid, String password) {
   preferences.end();
 }
 
-// Load WiFi credentials
 bool loadWiFiCredentials(String &ssid, String &password) {
   preferences.begin("wifi", true);
   ssid = preferences.getString("ssid", "");
@@ -194,78 +153,49 @@ bool loadWiFiCredentials(String &ssid, String &password) {
   return ssid.length() > 0 && password.length() > 0;
 }
 
-// Display IP address
-void displayIP() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("Firmware:");
-  display.setTextSize(2);
-  display.println(FIRMWARE_VERSION);
-  display.setTextSize(1);
-  display.println("Web IP:");
-  display.println(WiFi.localIP());
-  display.display();
-}
+void setup() {
+  Serial.begin(115200);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 
-// Connect to WiFi and setup web
-void connectAndSetupWeb() {
-  display.setCursor(0, 50);
-  display.println("Connecting WiFi...");
-  display.display();
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    while (1);
+  }
+
+  displayFirmwareVersion();
 
   WiFi.begin(defaultSSID, defaultPassword);
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
-    Serial.print(".");
     attempts++;
+    Serial.print(".");
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Connected to WiFi");
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println("WiFi Connected!");
+    display.setCursor(0, 50);
+    display.println(WiFi.localIP());
     display.display();
-    delay(1000);
-
     if (checkForUpdate()) {
       downloadFirmware(firmwareURL);
     }
-
-    displayIP();
     startWebServer();
   } else {
-    Serial.println("WiFi failed.");
-    display.setCursor(0, 50);
-    display.println("WiFi Failed!");
-    display.display();
+    String savedSSID, savedPassword;
+    if (loadWiFiCredentials(savedSSID, savedPassword)) {
+      connectToWiFi(savedSSID, savedPassword);
+      if (WiFi.status() == WL_CONNECTED) {
+        if (checkForUpdate()) {
+          downloadFirmware(firmwareURL);
+        }
+        startWebServer();
+      }
+    } else {
+      Serial.println("No saved WiFi creds.");
+    }
   }
 }
 
-// Setup
-void setup() {
-  Serial.begin(115200);
-  pinMode(ledPin, OUTPUT);
-
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("SSD1306 allocation failed");
-    while (1);
-  }
-
-  displayFirmwareVersion();
-  connectAndSetupWeb();
-}
-
-// Loop
 void loop() {
   server.handleClient();
-
-  static unsigned long lastMillis = 0;
-  if (millis() - lastMillis > 1000) {
-    lastMillis = millis();
-    digitalWrite(ledPin, !digitalRead(ledPin));
-    Serial.println("Running loop...");
-  }
-}
+} 
