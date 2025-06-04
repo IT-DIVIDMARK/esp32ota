@@ -33,6 +33,21 @@ Preferences preferences;
 // Web server instance
 WebServer server(80);
 
+// Function to display status
+void displayStatus(String status) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Firmware Version:");
+  display.setTextSize(2);
+  display.println(FIRMWARE_VERSION);
+  display.setTextSize(1);
+  display.setCursor(0, 50);
+  display.println(status);
+  display.display();
+}
+
 // Web page handlers
 void handleRoot() {
   String html = "<html><head><title>ESP32 LED Control</title></head><body>";
@@ -47,12 +62,14 @@ void handleLEDOn() {
   digitalWrite(ledPin, HIGH);
   server.sendHeader("Location", "/");
   server.send(303);
+  displayStatus("LED ON");
 }
 
 void handleLEDOff() {
   digitalWrite(ledPin, LOW);
   server.sendHeader("Location", "/");
   server.send(303);
+  displayStatus("LED OFF");
 }
 
 void startWebServer() {
@@ -79,10 +96,7 @@ void downloadFirmware(String url) {
       size_t written = Update.writeStream(client);
 
       if (written == contentLength && Update.end()) {
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println("Firmware Updated!");
-        display.display();
+        displayStatus("Firmware Updated!");
         delay(2000);
         ESP.restart();
       }
@@ -112,16 +126,6 @@ bool checkForUpdate() {
   return false;
 }
 
-void displayFirmwareVersion() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("Firmware Version:");
-  display.setTextSize(2);
-  display.println(FIRMWARE_VERSION);
-  display.display();
-}
-
 void connectToWiFi(String ssid, String password) {
   WiFi.begin(ssid.c_str(), password.c_str());
   int attempts = 0;
@@ -132,9 +136,7 @@ void connectToWiFi(String ssid, String password) {
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi Connected!");
-    display.setCursor(0, 50);
-    display.println("WiFi Connected!");
-    display.display();
+    displayStatus("WiFi: " + WiFi.localIP().toString());
   }
 }
 
@@ -158,11 +160,14 @@ void setup() {
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
 
+  Wire.begin(21, 22); // Ensure correct I2C pins for ESP32
+
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("Display init failed");
     while (1);
   }
 
-  displayFirmwareVersion();
+  displayStatus("Booting...");
 
   WiFi.begin(defaultSSID, defaultPassword);
   int attempts = 0;
@@ -173,9 +178,7 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(0, 50);
-    display.println(WiFi.localIP());
-    display.display();
+    displayStatus("WiFi: " + WiFi.localIP().toString());
     if (checkForUpdate()) {
       downloadFirmware(firmwareURL);
     }
@@ -192,10 +195,11 @@ void setup() {
       }
     } else {
       Serial.println("No saved WiFi creds.");
+      displayStatus("No WiFi creds");
     }
   }
 }
 
 void loop() {
   server.handleClient();
-} 
+}
