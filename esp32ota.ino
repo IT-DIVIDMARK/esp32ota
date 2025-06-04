@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -15,19 +16,36 @@ const char* defaultPassword = "password";
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
 String firmwareURL;
 
-// Define LED Pin (On-board LED, GPIO 2)
+// Pins
 const int ledPin = 2;
 
-// Current Firmware Version
-#define FIRMWARE_VERSION "1.0.7"
+// Firmware version
+#define FIRMWARE_VERSION "1.0.8"
 
-// Display configuration
+// OLED Display config
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Preferences instance to store Wi-Fi credentials
+// Preferences
 Preferences preferences;
+
+// WebServer
+WebServer server(80);
+
+// Web Interface HTML
+const char* htmlPage = R"rawliteral(
+<!DOCTYPE html>
+<html>
+  <head><title>ESP32 LED Control</title></head>
+  <body style="text-align:center;">
+    <h2>LED Control Panel</h2>
+    <button onclick="fetch('/on')">LED ON</button>
+    <button onclick="fetch('/off')">LED OFF</button>
+    <button onclick="fetch('/toggle')">TOGGLE LED</button>
+  </body>
+</html>
+)rawliteral";
 
 // OTA Firmware Download
 void downloadFirmware(String url) {
@@ -134,151 +152,120 @@ void displayFirmwareVersion() {
   display.display();
 }
 
-// WiFi Connect Function
-void connectToWiFi(String newSSID, String newPassword) {
-  WiFi.begin(newSSID.c_str(), newPassword.c_str());
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {  // Retry for 30 seconds
-    delay(500);
-    attempts++;
-    Serial.print(".");
-  }
+// Web server
+void startWebServer() {
+  server.on("/", HTTP_GET, []() {
+    server.send(200, "text/html", htmlPage);
+  });
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Connected to WiFi!");
-    display.setCursor(0, 50);
-    display.println("WiFi Connected!");
-    display.display();
-  } else {
-    Serial.println("Failed to connect to WiFi.");
-    display.setCursor(0, 50);
-    display.println("WiFi Connect Failed!");
-    display.display();
-  }
+  server.on("/on", HTTP_GET, []() {
+    digitalWrite(ledPin, HIGH);
+    server.send(200, "text/plain", "LED ON");
+  });
+
+  server.on("/off", HTTP_GET, []() {
+    digitalWrite(ledPin, LOW);
+    server.send(200, "text/plain", "LED OFF");
+  });
+
+  server.on("/toggle", HTTP_GET, []() {
+    digitalWrite(ledPin, !digitalRead(ledPin));
+    server.send(200, "text/plain", "LED TOGGLED");
+  });
+
+  server.begin();
+  Serial.println("Web server started.");
 }
 
-// Save WiFi credentials in Preferences
+// Save WiFi credentials
 void saveWiFiCredentials(String ssid, String password) {
-  preferences.begin("wifi", false);  // "wifi" namespace
+  preferences.begin("wifi", false);
   preferences.putString("ssid", ssid);
   preferences.putString("password", password);
   preferences.end();
 }
 
-// Load WiFi credentials from Preferences
+// Load WiFi credentials
 bool loadWiFiCredentials(String &ssid, String &password) {
-  preferences.begin("wifi", true);  // "wifi" namespace (read-only)
+  preferences.begin("wifi", true);
   ssid = preferences.getString("ssid", "");
   password = preferences.getString("password", "");
   preferences.end();
-
   return ssid.length() > 0 && password.length() > 0;
 }
 
-// Setup Function
+// Display IP address
+void displayIP() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Firmware:");
+  display.setTextSize(2);
+  display.println(FIRMWARE_VERSION);
+  display.setTextSize(1);
+  display.println("Web IP:");
+  display.println(WiFi.localIP());
+  display.display();
+}
+
+// Connect to WiFi and setup web
+void connectAndSetupWeb() {
+  display.setCursor(0, 50);
+  display.println("Connecting WiFi...");
+  display.display();
+
+  WiFi.begin(defaultSSID, defaultPassword);
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected to WiFi");
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("WiFi Connected!");
+    display.display();
+    delay(1000);
+
+    if (checkForUpdate()) {
+      downloadFirmware(firmwareURL);
+    }
+
+    displayIP();
+    startWebServer();
+  } else {
+    Serial.println("WiFi failed.");
+    display.setCursor(0, 50);
+    display.println("WiFi Failed!");
+    display.display();
+  }
+}
+
+// Setup
 void setup() {
   Serial.begin(115200);
   pinMode(ledPin, OUTPUT);
 
-  // Initialize Display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Default I2C address 0x3C
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("SSD1306 allocation failed");
     while (1);
   }
-  Serial.println("Display initialized");
 
   displayFirmwareVersion();
-
-  // Try to connect to default WiFi
-  WiFi.begin(defaultSSID, defaultPassword);
-  int connectAttempts = 0;
-  while (WiFi.status() != WL_CONNECTED && connectAttempts < 20) {  // Wait for 10 seconds
-    delay(500);
-    connectAttempts++;
-    Serial.print(".");
-    display.setCursor(0, 50);
-    display.println("Connecting WiFi...");
-    display.display();
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Connected to WiFi!");
-    display.setCursor(0, 50);
-    display.println("WiFi Connected!");
-    display.display();
-    delay(2000);
-
-    // Check for Update Only Once
-    if (checkForUpdate()) {
-      downloadFirmware(firmwareURL);
-    }
-  } else {
-    Serial.println("Failed to connect to default WiFi.");
-    display.setCursor(0, 50);
-    display.println("WiFi Connect Failed!");
-    display.display();
-    delay(2000);
-
-    // Try to connect to saved Wi-Fi credentials
-    String savedSSID, savedPassword;
-    if (loadWiFiCredentials(savedSSID, savedPassword)) {
-      Serial.println("Trying to connect to saved WiFi...");
-      connectToWiFi(savedSSID, savedPassword);
-      if (WiFi.status() == WL_CONNECTED) {
-        // Check for OTA update
-        if (checkForUpdate()) {
-          downloadFirmware(firmwareURL);
-        }
-      }
-    } else {
-      Serial.println("No saved Wi-Fi credentials found.");
-      display.setCursor(0, 50);
-      display.println("No WiFi Credentials!");
-      display.display();
-      delay(2000);
-
-      // Prompt user for new Wi-Fi credentials
-      String newSSID, newPassword;
-      Serial.println("Enter SSID: ");
-      while (Serial.available() == 0) {}  // Wait for SSID input
-      newSSID = Serial.readStringUntil('\n');
-      
-      Serial.println("Enter Password: ");
-      while (Serial.available() == 0) {}  // Wait for password input
-      newPassword = Serial.readStringUntil('\n');
-
-      // Trim any unnecessary newline or spaces
-      newSSID.trim();
-      newPassword.trim();
-
-      // Save credentials
-      saveWiFiCredentials(newSSID, newPassword);
-
-      // Connect to the new Wi-Fi network
-      connectToWiFi(newSSID, newPassword);
-
-      // After connection, check for OTA update
-      if (WiFi.status() == WL_CONNECTED && checkForUpdate()) {
-        downloadFirmware(firmwareURL);
-      }
-    }
-  }
+  connectAndSetupWeb();
 }
 
-// Main Loop
+// Loop
 void loop() {
-  // Blink onboard LED every 1 second
-  static unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
+  server.handleClient();
 
-  if (currentMillis - previousMillis >= 1000) {
-    previousMillis = currentMillis;
+  static unsigned long lastMillis = 0;
+  if (millis() - lastMillis > 1000) {
+    lastMillis = millis();
     digitalWrite(ledPin, !digitalRead(ledPin));
-    Serial.println("Running main loop...");
-    display.clearDisplay();
-    displayFirmwareVersion();
-    display.setCursor(0, 50);
-    display.println("Running Loop...");
-    display.display();
+    Serial.println("Running loop...");
   }
 }
