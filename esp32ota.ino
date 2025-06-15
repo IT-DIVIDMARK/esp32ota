@@ -20,7 +20,7 @@ String firmwareURL;
 const int ledPin = 4;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.14"
+#define FIRMWARE_VERSION "1.0.15"
 
 // Display config
 #define SCREEN_WIDTH 128
@@ -48,23 +48,38 @@ void displayStatus(String status) {
   display.display();
 }
 
+// Web page handlers
 void handleRoot() {
   String html = "<html><head><title>ESP32 LED Control</title>";
+  
+  // Viewport for responsive design
+  html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+
+  // CSS Styling
   html += "<style>";
-  html += ".switch {position: relative; display: inline-block; width: 60px; height: 34px;}";
-  html += ".switch input {opacity: 0; width: 0; height: 0;}";
-  html += ".slider {position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;";
-  html += "background-color: #ccc; transition: .4s; border-radius: 34px;}";
-  html += ".slider:before {position: absolute; content: ''; height: 26px; width: 26px; left: 4px; bottom: 4px;";
-  html += "background-color: white; transition: .4s; border-radius: 50%;}";
-  html += "input:checked + .slider {background-color: #2196F3;}";
-  html += "input:checked + .slider:before {transform: translateX(26px);}";
+  html += "body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; }";
+  html += ".container { max-width: 400px; margin: auto; }";
+  html += "h1 { font-size: 24px; }";
+  html += ".switch { position: relative; display: inline-block; width: 60px; height: 34px; margin-top: 20px; }";
+  html += ".switch input { opacity: 0; width: 0; height: 0; }";
+  html += ".slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;";
+  html += "background-color: #ccc; transition: .4s; border-radius: 34px; }";
+  html += ".slider:before { position: absolute; content: ''; height: 26px; width: 26px; left: 4px; bottom: 4px;";
+  html += "background-color: white; transition: .4s; border-radius: 50%; }";
+  html += "input:checked + .slider { background-color: #2196F3; }";
+  html += "input:checked + .slider:before { transform: translateX(26px); }";
   html += "</style></head><body>";
+  
+  // Page Content
+  html += "<div class=\"container\">";
   html += "<h1>LED Control</h1>";
   html += "<label class=\"switch\">";
   html += "<input type=\"checkbox\" onchange=\"toggleLED(this)\">";
   html += "<span class=\"slider\"></span>";
   html += "</label>";
+  html += "</div>";
+  
+  // JavaScript
   html += "<script>";
   html += "function toggleLED(elem) {";
   html += "  var xhttp = new XMLHttpRequest();";
@@ -73,6 +88,7 @@ void handleRoot() {
   html += "  xhttp.send();";
   html += "}";
   html += "</script>";
+  
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
