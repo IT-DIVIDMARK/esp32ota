@@ -20,7 +20,7 @@ String firmwareURL;
 const int ledPin = 4;
 
 // Current Firmware Version
-#define FIRMWARE_VERSION "1.0.13"
+#define FIRMWARE_VERSION "1.0.14"
 
 // Display config
 #define SCREEN_WIDTH 128
