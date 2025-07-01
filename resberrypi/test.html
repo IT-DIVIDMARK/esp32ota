@@ -1,0 +1,147 @@
+void handleRoot() {
+
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Switch Pro</title>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    /*  ▼▼▼  EXACT STYLE FROM YOUR SMART‑SWITCH‑PRO FILE  ▼▼▼  */
+    :root{--primary:#3b82f6;--bg:#f9fafb;--text:#111827;--card:#ffffff;--muted:#6b7280}
+    *{box-sizing:border-box;margin:0;padding:0;
+      -webkit-tap-highlight-color:transparent;font-family:'Segoe UI',Arial,sans-serif}
+    body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+    header{padding:14px 20px;background:var(--primary);color:#fff;font-size:1.4rem;font-weight:600;
+           display:flex;align-items:center;justify-content:space-between;
+           box-shadow:0 2px 6px rgba(0,0,0,.1);border-bottom:1px solid rgba(255,255,255,.2)}
+    .bell-wrapper{position:relative}
+    .bell-wrapper i{font-size:1.3rem;cursor:pointer}
+    .badge{position:absolute;top:-4px;right:-8px;min-width:16px;height:16px;padding:0 4px;
+           font-size:.65rem;line-height:16px;text-align:center;color:#fff;background:#e11d48;
+           border-radius:999px;font-weight:600}
+    main{flex:1;overflow-y:auto;padding:16px}
+    .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:16px;
+          box-shadow:0 1px 4px rgba(0,0,0,.06)}
+    .card-title{font-weight:600;margin-bottom:8px}
+    .device-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+    .device-card{position:relative;background:var(--card);border-radius:20px;padding:20px 16px;text-align:center;
+                 box-shadow:0 4px 12px rgba(0,0,0,.06);display:flex;flex-direction:column;align-items:center;gap:18px}
+    .device-icon i{font-size:3rem;color:var(--primary)}
+    .device-name{font-weight:600;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .remove-btn{position:absolute;top:10px;right:10px;border:none;background:#f3f4f6;color:var(--muted);
+                font-size:.9rem;padding:6px;border-radius:50%;cursor:pointer}
+    .remove-btn:hover{background:#e5e7eb}
+    /*  simple toggle  */
+    .switch{position:relative;width:46px;height:26px;display:block}
+    .switch input{opacity:0;width:0;height:0}
+    .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#d1d5db;
+            border-radius:15px;transition:.2s}
+    .slider:before{content:'';position:absolute;height:22px;width:22px;left:2px;top:2px;
+                   background:#fff;border-radius:50%;transition:.2s}
+    .switch input:checked+.slider{background:var(--primary)}
+    .switch input:checked+.slider:before{transform:translateX(20px)}
+  </style>
+
+  <script>
+    /* refresh sensor every 5 s */
+    function updateSensor(){
+      fetch('/get_sensor')
+        .then(r=>r.json())
+        .then(d=>{
+          document.getElementById('tempValue').innerText = d.temperature + '°C';
+          document.getElementById('humValue').innerText  = d.humidity    + '%';
+        });
+    }
+    setInterval(updateSensor,5000); window.onload = updateSensor;
+
+    /* toggle relay  */
+    function toggleGPIO(pin,state){
+      fetch('/'+state+'?gpio='+pin)
+        .then(()=>console.log('GPIO',pin,state));
+    }
+  </script>
+</head>
+<body>
+
+  <!-- ── HEADER ────────────────────────────── -->
+  <header>
+    <div style="display:flex;align-items:center;gap:10px">
+      <img src="logo.svg" alt="Smart Switch Pro" style="height:32px">
+      <span style="font-weight:600;font-size:1.1rem;color:#fff">Smart Switch Pro</span>
+    </div>
+    <div class="bell-wrapper">
+      <i class="fa-solid fa-bell"></i>
+      <span class="badge">1</span>
+    </div>
+  </header>
+
+  <!-- ── MAIN CONTENT ──────────────────────── -->
+  <main>
+
+    <!--  Temperature / Humidity  -->
+    <div class="card">
+      <div class="card-title">Environment</div>
+      <h2 id="tempValue" style="font-size:2.2rem;font-weight:700">-- °C</h2>
+      <p style="margin-bottom:8px;color:var(--muted)">Temperature</p>
+      <h2 id="humValue"  style="font-size:2.2rem;font-weight:700">-- %</h2>
+      <p style="color:var(--muted)">Humidity</p>
+    </div>
+
+    <!--  Device grid (populated by C++)  -->
+    <div class="card">
+      <div class="card-title">My Appliances</div>
+      <div class="device-card-grid">
+)rawliteral";
+
+  /* ──── device cards generated server‑side ──── */
+  for (int i = 0; i < deviceCount; ++i) {
+    html +=
+      "<div class='device-card'>"
+        "<div class='device-icon'><i class='fa-solid fa-plug'></i></div>"
+        "<div class='device-name'>" + devices[i].name + "</div>"
+
+        "<label class='switch'>"
+          "<input type='checkbox'"
+                 + String(devices[i].state ? " checked" : "")
+                 + " onchange=\"toggleGPIO(" + String(devices[i].gpio)
+                 + ", this.checked ? 'on' : 'off')\">"
+          "<span class='slider'></span>"
+        "</label>"
+
+        "<button class='remove-btn'"
+                " onclick=\"location.href='/remove?gpio=" + String(devices[i].gpio) + "'\">"
+          "<i class='fa-solid fa-trash'></i>"
+        "</button>"
+      "</div>";
+  }
+
+  /* ──── add‑device form ──── */
+  html += R"rawliteral(
+      </div> <!-- .device-card-grid -->
+    </div> <!-- My Appliances card -->
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">Add New Device</div>
+      <form action="/add" method="get">
+        <input name="name" placeholder="Device Name"
+               style="width:100%;padding:8px;margin:6px 0;border:1px solid #ccc;border-radius:8px" required>
+        <input name="gpio" type="number" placeholder="GPIO Pin"
+               style="width:100%;padding:8px;margin:6px 0;border:1px solid #ccc;border-radius:8px" required>
+        <input type="submit" value="Add Device"
+               style="padding:10px 16px;background:var(--primary);color:#fff;border:none;border-radius:8px;cursor:pointer">
+      </form>
+    </div>
+
+  </main>
+
+</body>
+</html>
+)rawliteral";
+
+  server.send(200, "text/html", html);
+}

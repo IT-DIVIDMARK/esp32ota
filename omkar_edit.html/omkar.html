@@ -1,0 +1,120 @@
+void handleRoot() {
+    String html = R"rawliteral(
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>ESP32 Smart Home</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #f0f0f0; margin: 0; padding: 0; }
+      header { background: #2196F3; color: white; padding: 15px 0; text-align: center; }
+      nav { background: #1976D2; display: flex; justify-content: center; }
+      nav a {
+        color: white; padding: 14px 20px; text-decoration: none;
+        display: block; font-weight: bold; transition: background 0.3s;
+      }
+      nav a:hover { background: #1565C0; }
+  
+      .dashboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin: 20px;
+      }
+      .card {
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+      }
+      .card:hover { transform: scale(1.02); }
+  
+      .temp { font-size: 2em; color: #ff5722; }
+      .toggle-btn { position: relative; display: inline-block; width: 50px; height: 24px; }
+      .toggle-btn input { display: none; }
+      .slider {
+        position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #ccc; border-radius: 24px; transition: .4s;
+      }
+      .slider:before {
+        position: absolute; content: ''; height: 20px; width: 20px; left: 2px; bottom: 2px;
+        background-color: white; border-radius: 50%; transition: .4s;
+      }
+      input:checked + .slider { background-color: #4caf50; }
+      input:checked + .slider:before { transform: translateX(26px); }
+  
+      a.remove-btn { color: red; text-decoration: none; margin-left: 10px; font-size: 0.9em; }
+    </style>
+    <script>
+      function updateSensor() {
+        fetch('/get_sensor')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('temp').innerText = data.temperature + '°C';
+          document.getElementById('hum').innerText = data.humidity + '%';
+        });
+      }
+      setInterval(updateSensor, 5000);
+      window.onload = updateSensor;
+  
+      function toggleGPIO(gpio, state) {
+        fetch('/' + state + '?gpio=' + gpio).then(() => location.reload());
+      }
+    </script>
+  </head>
+  <body>
+  
+  <header>
+    <h1>🏠 ESP32 Smart Home Dashboard</h1>
+  </header>
+  
+  <nav>
+    <button id="navDashboard" class="active" onclick="showSection('dashboard')"><i
+        class="fa-solid fa-house"></i><span>Home</span></button>
+    <button id="navSettings" onclick="showSection('settings')"><i
+        class="fa-solid fa-gear"></i><span>Settings</span></button>
+    <button id="navTemp" onclick="showSection('temperature')"><i
+        class="fa-solid fa-temperature-three-quarters"></i><span>Temp</span></button>
+    <button id="navAuth" onclick="showSection('auth')"><i class="fa-solid fa-user-lock"></i><span>Auth</span></button>
+  </nav>
+  
+  <div class="dashboard">
+  
+    <div class="card">
+      <h2>🥵 Temperature</h2>
+      <div class="temp" id="temp">-- °C</div>
+      <h2>💧 Humidity</h2>
+      <div class="temp" id="hum">-- %</div>
+    </div>
+  )rawliteral";
+  
+    // Device Cards
+    for (int i = 0; i < deviceCount; i++) {
+      html += "<div class='card'>";
+      html += "<h2>" + devices[i].name + "</h2>";
+      html += "<div>GPIO: " + String(devices[i].gpio) + "</div>";
+      html += "<label class='toggle-btn'>";
+      html += "<input type='checkbox' onchange=\"toggleGPIO(" + String(devices[i].gpio) + ", this.checked ? 'on' : 'off')\" ";
+      if (devices[i].state) html += "checked";
+      html += "><span class='slider'></span></label>";
+      html += "<br><a href='/remove?gpio=" + String(devices[i].gpio) + "' class='remove-btn'>Remove</a>";
+      html += "</div>";
+    }
+  
+    // Add Device Form
+    html += R"rawliteral(
+      <div class="card">
+        <h2>Add Device</h2>
+        <form action="/add" method="get">
+          <input type="text" name="name" placeholder="Device Name" required><br><br>
+          <input type="number" name="gpio" placeholder="GPIO Pin" required><br><br>
+          <input type="submit" value="Add">
+        </form>
+      </div>
+    )rawliteral";
+  
+    html += "</div></body></html>";
+    server.send(200, "text/html", html);
+  }
+  

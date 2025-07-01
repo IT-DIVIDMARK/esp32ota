@@ -191,7 +191,7 @@ void handleRoot() {
   <div class="dashboard">
 
     <div class="card">
-      <h2>🌡 Temperature</h2>
+      <h2>🥵 Temperature</h2>
       <div class="temp" id="temp">-- °C</div>
       <h2>💧 Humidity</h2>
       <div class="temp" id="hum">-- %</div>
