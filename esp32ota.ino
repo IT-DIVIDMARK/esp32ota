@@ -20,7 +20,7 @@ const char* password = "password";
 // OTA Version check
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
 String firmwareURL;
-#define FIRMWARE_VERSION "1.0.17"
+#define FIRMWARE_VERSION "1.0.18"
 
 // DHT22 Sensor
 #define DHTPIN 25
