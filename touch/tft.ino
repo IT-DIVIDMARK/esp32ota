@@ -1,34 +1,17 @@
+#include <SPI.h>
+#include <TFT_eSPI.h> 
+#include <FS.h>
+#include <SPIFFS.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
 #include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <Preferences.h>
 #include <WebServer.h>
 #include "DHT.h"
-#include <SPI.h>
-#include <TFT_eSPI.h>       // TFT library
-#include <FS.h>
-#include <SPIFFS.h>
-
-
-TFT_eSPI tft = TFT_eSPI();  // Create TFT object
-
-// Define LED pins
-const int ledPins[4] = {26, 27, 32, 33};
-
-// Touch button frame settings
-#define FRAME_X 40
-#define FRAME_Y 50
-#define FRAME_W 240
-#define FRAME_H 180
-#define BUTTON_W (FRAME_W / 2)
-#define BUTTON_H (FRAME_H / 2)
-
-// Touch calibration data from TFT_eSPI "Touch_calibrate" example
-uint16_t calData[5] = {275, 3590, 285, 3541, 7};  // Replace with your values
-
-bool ledState[4] = {false, false, false, false};
 
 // WiFi
 const char* ssid = "admin";
@@ -37,10 +20,10 @@ const char* password = "password";
 // OTA Version check
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
 String firmwareURL;
-#define FIRMWARE_VERSION "1.0.17"
+#define FIRMWARE_VERSION "1.0.18"
 
 // DHT22 Sensor
-#define DHTPIN 17
+#define DHTPIN 25
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 float temperature = 0;
@@ -59,7 +42,47 @@ int deviceCount = 0;
 Preferences preferences;
 WebServer server(80);
 
-// OTA functions
+
+TFT_eSPI tft = TFT_eSPI();  // Create TFT object
+
+// Define LED pins
+//const int ledPins[4] = {26, 27, 32, 33};
+
+// Touch button frame settings
+#define FRAME_X 40
+#define FRAME_Y 50
+#define FRAME_W 240
+#define FRAME_H 180
+#define BUTTON_W (FRAME_W / 2)
+#define BUTTON_H (FRAME_H / 2)
+
+// Touch calibration data from TFT_eSPI "Touch_calibrate" example
+uint16_t calData[5] = {275, 3590, 285, 3541, 7};  // Replace with your values
+
+//bool ledState[4] = {false, false, false, false};
+
+
+// Function Prototypes
+void handleRoot();
+void handleAddDevice();
+void handleRemoveDevice();
+void handleNotFound();
+void handleSensorData();
+void loadDevices();
+void saveDevices();
+void updateDeviceState(int gpio, bool state);
+//void displayStatus(String status);
+void startWebServer();
+void downloadFirmware(String url);
+bool checkForUpdate();
+void drawButtons();
+void updateButton(int index);
+int getButton(int x, int y);
+void drawButtons();
+void drawWiFiStatus();
+void drawDeviceButton(int index);
+
+// OTA functions (same as before)
 void downloadFirmware(String url) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -73,7 +96,7 @@ void downloadFirmware(String url) {
       WiFiClient& client = http.getStream();
       size_t written = Update.writeStream(client);
       if (written == contentLength && Update.end()) {
-        Serial.println("Firmware updated! Rebooting...");
+       // displayStatus("Updated! Rebooting...");
         delay(2000);
         ESP.restart();
       }
@@ -315,6 +338,8 @@ function showSection(id) {
 }
 
 
+
+
 void handleAddDevice() {
   if (deviceCount >= MAX_DEVICES) {
     server.send(200, "text/plain", "Max device limit reached!");
@@ -351,16 +376,6 @@ void handleRemoveDevice() {
   server.send(302, "text/plain", "");
 }
 
-void updateDeviceState(int gpio, bool state) {
-  for (int i = 0; i < deviceCount; i++) {
-    if (devices[i].gpio == gpio) {
-      devices[i].state = state;
-      break;
-    }
-  }
-  saveDevices();
-}
-
 void handleNotFound() {
   String path = server.uri();
   if (path.startsWith("/on")) {
@@ -378,6 +393,17 @@ void handleNotFound() {
   } else {
     server.send(404, "text/plain", "Not found");
   }
+}
+
+void updateDeviceState(int gpio, bool state) {
+  for (int i = 0; i < deviceCount; i++) {
+    if (devices[i].gpio == gpio) {
+      devices[i].state = state;
+      drawDeviceButton(i);  // Redraw the specific button with new state
+      break;
+    }
+  }
+  saveDevices();
 }
 
 
@@ -400,31 +426,9 @@ void startWebServer() {
   Serial.println("Web server started.");
 }
 
-void drawButtons();               // 👈 Add this
-void updateButton(int index);     // 👈 And this
-void updateDeviceState(int gpio, bool state); // 👈 If used
-
-// Main setup
 void setup() {
-//touch screen 
-Serial.begin(115200);
-  tft.init();
-  tft.setRotation(1);
-  tft.setTouch(calData);  // Apply touch calibration
-  tft.fillScreen(TFT_BLACK);
+  Serial.begin(115200);
 
-  // Init LED pins
-  for (int i = 0; i < 4; i++) {
-    pinMode(ledPins[i], OUTPUT);
-    digitalWrite(ledPins[i], LOW);
-  }
-
-  drawButtons();
-
-  //Serial.begin(115200);
- // Wire.begin(21, 22);
-
-  Serial.println("Booting...");
   dht.begin();
   pinMode(DHTPIN, INPUT);
   loadDevices();
@@ -440,12 +444,12 @@ Serial.begin(115200);
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
-    Serial.println("\nWiFi connected. IP: " + WiFi.localIP().toString());
+    //displayStatus("WiFi: " + WiFi.localIP().toString());
   } else {
     WiFi.mode(WIFI_AP);
-    WiFi.softAP("Smart_Switch_Pro", "12345678");
+    WiFi.softAP("Smart_Switch_Pro 🛜 ", "12345678");
     IPAddress myIP = WiFi.softAPIP();
-    Serial.println("AP Mode Started. IP: " + myIP.toString());
+    //displayStatus("AP Mode: " + myIP.toString());
   }
 
   if (wifiConnected && checkForUpdate()) {
@@ -453,60 +457,42 @@ Serial.begin(115200);
   }
 
   startWebServer();
-}
-void drawButtons() {
-  for (int i = 0; i < 4; i++) {
-    updateButton(i);
-  }
-}
 
-void updateButton(int index) {
-  int col = (index % 2);
-  int row = (index / 2);
-  int x = FRAME_X + col * BUTTON_W;
-  int y = FRAME_Y + row * BUTTON_H;
+  tft.init();
+  tft.setRotation(1);
+  tft.setTouch(calData);  // Apply touch calibration
+  tft.fillScreen(TFT_BLACK);
 
-  tft.fillRect(x, y, BUTTON_W - 2, BUTTON_H - 2, ledState[index] ? TFT_GREEN : TFT_RED);
-  tft.drawRect(x, y, BUTTON_W - 2, BUTTON_H - 2, TFT_WHITE);
-  tft.setTextColor(TFT_WHITE, ledState[index] ? TFT_GREEN : TFT_RED);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextFont(2);  // ✅ Add this
-  tft.setTextSize(1);
-  String label = "LED " + String(index + 1);
-  tft.drawString(label, x + (BUTTON_W / 2) - 2, y + (BUTTON_H / 2) - 2);
+  // Init LED pins
+  for (int i = 0; i < deviceCount; i++) {
+  pinMode(devices[i].gpio, OUTPUT);
+  digitalWrite(devices[i].gpio, devices[i].state ? HIGH : LOW);
 }
 
+  drawButtons();
+  tft.fillScreen(TFT_BLACK);
+drawWiFiStatus();  // Show Wi-Fi icon and IP address
+loadDevices();
+drawButtons();  // Always draw after loading
 
-int getButton(int x, int y) {
-  for (int i = 0; i < 4; i++) {
-    int col = (i % 2);
-    int row = (i / 2);
-    int bx = FRAME_X + col * BUTTON_W;
-    int by = FRAME_Y + row * BUTTON_H;
-    if (x > bx && x < bx + BUTTON_W && y > by && y < by + BUTTON_H) {
-      return i;
-    }
-  }
-  return -1;
+
 }
 
 void loop() {
   uint16_t x, y;
-
-  // Handle TFT touch input
- if (tft.getTouch(&x, &y)) {
-  int btn = getButton(x, y);
-  if (btn != -1) {
-    ledState[btn] = !ledState[btn];
-    digitalWrite(ledPins[btn], ledState[btn] ? HIGH : LOW);
-    drawButtons();  // ✅ FIX: update all buttons
+  if (tft.getTouch(&x, &y)) {
+    int btn = getButton(x, y); // ✅ Declare here
+    if (btn != -1) {
+      devices[btn].state = !devices[btn].state;
+      digitalWrite(devices[btn].gpio, devices[btn].state ? HIGH : LOW);
+      drawDeviceButton(btn);
+      saveDevices();
+    }
+    delay(300);  // Debounce
   }
-  delay(300);
-}
-  // Handle web server requests
+
   server.handleClient();
 
-  // Update DHT sensor data every 5 seconds
   static unsigned long lastDHT = 0;
   if (millis() - lastDHT > 5000) {
     lastDHT = millis();
@@ -516,3 +502,75 @@ void loop() {
   }
 }
 
+
+void drawButtons() {
+  tft.fillScreen(TFT_BLACK);
+  for (int i = 0; i < deviceCount; i++) {
+    drawDeviceButton(i);
+  }
+}
+void drawDeviceButton(int index) {
+  int col = (index % 2);
+  int row = (index / 2);
+  int x = FRAME_X + col * BUTTON_W;
+  int y = FRAME_Y + row * BUTTON_H;
+
+  bool state = devices[index].state;
+
+  tft.fillRect(x, y, BUTTON_W - 2, BUTTON_H - 2, state ? TFT_GREEN : TFT_RED);
+  tft.drawRect(x, y, BUTTON_W - 2, BUTTON_H - 2, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, state ? TFT_GREEN : TFT_RED);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  String label = devices[index].name;
+  tft.drawString(label, x + (BUTTON_W / 2) - 2, y + (BUTTON_H / 2) - 2);
+}
+
+
+
+void updateButton(int index) {
+  int col = (index % 2);
+  int row = (index / 2);
+  int x = FRAME_X + col * BUTTON_W;
+  int y = FRAME_Y + row * BUTTON_H;
+
+  bool state = devices[index].state;  // ✅ Declare once
+
+  tft.fillRect(x, y, BUTTON_W - 2, BUTTON_H - 2, state ? TFT_GREEN : TFT_RED);
+  tft.drawRect(x, y, BUTTON_W - 2, BUTTON_H - 2, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, state ? TFT_GREEN : TFT_RED);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  String label = devices[index].name;
+  tft.drawString(label, x + (BUTTON_W / 2) - 2, y + (BUTTON_H / 2) - 2);
+}
+
+
+void drawWiFiStatus() {
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    tft.drawString("WiFi", 5, 5); 
+    tft.drawString(WiFi.localIP().toString(), 40, 5);
+  } else {
+    tft.drawString("D Hotspot", 5, 5);
+    tft.drawString("192.168.4.1", 60, 5); 
+  }
+}
+
+
+
+int getButton(int x, int y) {
+  for (int i = 0; i < deviceCount; i++) {
+    int col = i % 2;
+    int row = i / 2;
+    int bx = FRAME_X + col * BUTTON_W;
+    int by = FRAME_Y + row * BUTTON_H;
+    if (x > bx && x < bx + BUTTON_W && y > by && y < by + BUTTON_H) {
+      return i;
+    }
+  }
+  return -1;
+}

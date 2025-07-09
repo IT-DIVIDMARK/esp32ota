@@ -1,5 +1,5 @@
 #include <SPI.h>
-#include <TFT_eSPI.h> 
+#include <TFT_eSPI.h>       // TFT library
 #include <FS.h>
 #include <SPIFFS.h>
 #include <WiFi.h>
@@ -20,7 +20,7 @@ const char* password = "password";
 // OTA Version check
 const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ota/main/version.json";
 String firmwareURL;
-#define FIRMWARE_VERSION "1.0.18"
+#define FIRMWARE_VERSION "1.0.17"
 
 // DHT22 Sensor
 #define DHTPIN 25
@@ -79,6 +79,18 @@ void drawButtons();
 void updateButton(int index);
 int getButton(int x, int y);
 void drawButtons();
+
+// // Display status
+// void displayStatus(String status) {
+//   display.clearDisplay();
+//   display.setTextSize(1);
+//   display.setTextColor(SSD1306_WHITE);
+//   display.setCursor(0, 0);
+//   display.println("FW Ver: " FIRMWARE_VERSION);
+//   display.setCursor(0, 15);
+//   display.println(status);
+//   display.display();
+// }
 
 // OTA functions (same as before)
 void downloadFirmware(String url) {
@@ -424,6 +436,9 @@ void startWebServer() {
 
 void setup() {
   Serial.begin(115200);
+  // //Wire.begin(21, 22);
+  // if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) while (1);
+  // displayStatus("Booting...");
 
   dht.begin();
   pinMode(DHTPIN, INPUT);
