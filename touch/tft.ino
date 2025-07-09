@@ -2,12 +2,33 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <ArduinoJson.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include <Preferences.h>
 #include <WebServer.h>
 #include "DHT.h"
+#include <SPI.h>
+#include <TFT_eSPI.h>       // TFT library
+#include <FS.h>
+#include <SPIFFS.h>
+
+
+TFT_eSPI tft = TFT_eSPI();  // Create TFT object
+
+// Define LED pins
+const int ledPins[4] = {26, 27, 32, 33};
+
+// Touch button frame settings
+#define FRAME_X 40
+#define FRAME_Y 50
+#define FRAME_W 240
+#define FRAME_H 180
+#define BUTTON_W (FRAME_W / 2)
+#define BUTTON_H (FRAME_H / 2)
+
+// Touch calibration data from TFT_eSPI "Touch_calibrate" example
+uint16_t calData[5] = {275, 3590, 285, 3541, 7};  // Replace with your values
+
+bool ledState[4] = {false, false, false, false};
 
 // WiFi
 const char* ssid = "admin";
@@ -18,20 +39,15 @@ const char* versionURL = "https://raw.githubusercontent.com/IT-DIVIDMARK/esp32ot
 String firmwareURL;
 #define FIRMWARE_VERSION "1.0.17"
 
-// OLED Display
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
 // DHT22 Sensor
-#define DHTPIN 18
+#define DHTPIN 17
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 float temperature = 0;
 float humidity = 0;
 
 // Devices
-#define MAX_DEVICES 4
+#define MAX_DEVICES 10
 struct Device {
   String name;
   int gpio;
@@ -43,33 +59,7 @@ int deviceCount = 0;
 Preferences preferences;
 WebServer server(80);
 
-// Function Prototypes
-void handleRoot();
-void handleAddDevice();
-void handleRemoveDevice();
-void handleNotFound();
-void handleSensorData();
-void loadDevices();
-void saveDevices();
-void updateDeviceState(int gpio, bool state);
-void displayStatus(String status);
-void startWebServer();
-void downloadFirmware(String url);
-bool checkForUpdate();
-
-// Display status
-void displayStatus(String status) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.println("FW Ver: " FIRMWARE_VERSION);
-  display.setCursor(0, 15);
-  display.println(status);
-  display.display();
-}
-
-// OTA functions (same as before)
+// OTA functions
 void downloadFirmware(String url) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -83,7 +73,7 @@ void downloadFirmware(String url) {
       WiFiClient& client = http.getStream();
       size_t written = Update.writeStream(client);
       if (written == contentLength && Update.end()) {
-        displayStatus("Updated! Rebooting...");
+        Serial.println("Firmware updated! Rebooting...");
         delay(2000);
         ESP.restart();
       }
@@ -224,16 +214,13 @@ void handleRoot() {
 
     // Toggle Switch
     html += "<label class='switch'>";
-    // html += "<input type='checkbox' onchange=\"toggleGPIO(" + String(devices[i].gpio) + ", this.checked ? 'on' : 'off')\" ";
-   html += "<input type='checkbox' onchange=\"toggleGPIO(" + String(devices[i].gpio) + ", this.checked ? 'on' : 'off')\"";
-if (devices[i].state) html += " checked";
-html += "><span class='slider'></span></label>";
-
+    html += "<input type='checkbox' onchange=\"toggleGPIO(" + String(devices[i].gpio) + ", this.checked ? 'on' : 'off')\" ";
+    if (devices[i].state) html += "checked";
     html += "><span class='slider'></span></label>";
 
     // Remove Button
-   html += "<button class='remove-btn' onclick=\"removeDevice(" + String(devices[i].gpio) + ")\">";
-    html += " <i class='fa-solid fa-trash'></i></button>";
+    html += "<button class='remove-btn' onclick=\"location.href='/remove?gpio=" + String(devices[i].gpio) + "'\">";
+    html += "<i class='fa-solid fa-trash'></i></button>";
 
     html += "</div>";
   }
@@ -299,19 +286,17 @@ html += "><span class='slider'></span></label>";
 <div id="addModal" class="modal" onclick="closeModal()">
   <div class="modal-content" onclick="event.stopPropagation()">
     <h2>Add Device</h2>
-    <form id="addDeviceForm">
-  <input name="name" type="text" placeholder="Device Name" required><br><br>
-  <input name="gpio" type="number" placeholder="GPIO Pin" required><br><br>
-  <button class="btn" type="submit">Add</button>
-</form>
+    <form action="/add" method="get">
+      <input name="name" type="text" placeholder="Device Name" required><br><br>
+      <input name="gpio" type="number" placeholder="GPIO Pin" required><br><br>
+      <button class="btn" type="submit"><i class="fa-solid fa-plus"></i> Add</button>
+    </form>
   </div>
 </div>
 
 <script>
-function toggleGPIO(gpio, state, cardElement) {
-  fetch('/' + state + '?gpio=' + gpio).then(() => {
-    console.log("GPIO " + gpio + " turned " + state);
-  });
+function toggleGPIO(gpio, state) {
+  fetch('/' + state + '?gpio=' + gpio).then(() => location.reload());
 }
 function closeModal() {
   document.getElementById('addModal').classList.remove('open');
@@ -319,42 +304,6 @@ function closeModal() {
 function showSection(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.id === 'nav' + id.charAt(0).toUpperCase() + id.slice(1)));
-}
-
-document.getElementById('addDeviceForm').addEventListener('submit', function(e) {
-  e.preventDefault();
-  const formData = new FormData(this);
-  const params = new URLSearchParams(formData);
-  fetch('/add?' + params.toString()).then(() => {
-    closeModal();
-    refreshDeviceList();
-  });
-});
-
-function refreshDeviceList() {
-  fetch('/get_devices')
-    .then(response => response.json())
-    .then(data => {
-      const deviceGrid = document.getElementById('deviceGridDash');
-      deviceGrid.innerHTML = '';
-      data.devices.forEach(d => {
-        deviceGrid.innerHTML += `
-          <div class='device-card'>
-            <div class='device-icon'><i class='fa-solid fa-plug'></i></div>
-            <div class='device-name'>${d.name}</div>
-            <label class='switch'>
-              <input type='checkbox' ${d.state ? 'checked' : ''} onchange="toggleGPIO(${d.gpio}, this.checked ? 'on' : 'off')">
-              <span class='slider'></span>
-            </label>
-            <button class='remove-btn' onclick="removeDevice(${d.gpio})">
-              <i class='fa-solid fa-trash'></i>
-            </button>
-          </div>`;
-      });
-    });
-}
-function removeDevice(gpio) {
-  fetch('/remove?gpio=' + gpio).then(() => refreshDeviceList());
 }
 </script>
 
@@ -364,8 +313,6 @@ function removeDevice(gpio) {
 
   server.send(200, "text/html", html);
 }
-
-
 
 
 void handleAddDevice() {
@@ -404,23 +351,6 @@ void handleRemoveDevice() {
   server.send(302, "text/plain", "");
 }
 
-void handleNotFound() {
-  String path = server.uri();
-  if (path.startsWith("/on")) {
-    int gpio = server.arg("gpio").toInt();
-    digitalWrite(gpio, HIGH);
-    updateDeviceState(gpio, true);
-    server.send(200, "text/plain", "ON");
-  } else if (path.startsWith("/off")) {
-    int gpio = server.arg("gpio").toInt();
-    digitalWrite(gpio, LOW);
-    updateDeviceState(gpio, false);
-    server.send(200, "text/plain", "OFF");
-  } else {
-    server.send(404, "text/plain", "Not found");
-  }  
-}
-
 void updateDeviceState(int gpio, bool state) {
   for (int i = 0; i < deviceCount; i++) {
     if (devices[i].gpio == gpio) {
@@ -430,19 +360,26 @@ void updateDeviceState(int gpio, bool state) {
   }
   saveDevices();
 }
-void handleGetDevices() {
-    DynamicJsonDocument doc(1024);
-    JsonArray arr = doc.createNestedArray("devices");
-    for (int i = 0; i < deviceCount; i++) {
-      JsonObject obj = arr.createNestedObject();
-      obj["name"] = devices[i].name;
-      obj["gpio"] = devices[i].gpio;
-      obj["state"] = devices[i].state;
-    }
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
-  }  
+
+void handleNotFound() {
+  String path = server.uri();
+  if (path.startsWith("/on")) {
+    int gpio = server.arg("gpio").toInt();
+    digitalWrite(gpio, HIGH);
+    updateDeviceState(gpio, true);
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  } else if (path.startsWith("/off")) {
+    int gpio = server.arg("gpio").toInt();
+    digitalWrite(gpio, LOW);
+    updateDeviceState(gpio, false);
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  } else {
+    server.send(404, "text/plain", "Not found");
+  }
+}
+
 
 void handleSensorData() {
   DynamicJsonDocument doc(256);
@@ -454,7 +391,6 @@ void handleSensorData() {
 }
 
 void startWebServer() {
-server.on("/get_devices", handleGetDevices);
   server.on("/", handleRoot);
   server.on("/get_sensor", handleSensorData);
   server.on("/add", handleAddDevice);
@@ -464,36 +400,113 @@ server.on("/get_devices", handleGetDevices);
   Serial.println("Web server started.");
 }
 
-void setup() {
-  Serial.begin(115200);
-  Wire.begin(21, 22);
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) while (1);
-  displayStatus("Booting...");
+void drawButtons();               // 👈 Add this
+void updateButton(int index);     // 👈 And this
+void updateDeviceState(int gpio, bool state); // 👈 If used
 
+// Main setup
+void setup() {
+//touch screen 
+Serial.begin(115200);
+  tft.init();
+  tft.setRotation(1);
+  tft.setTouch(calData);  // Apply touch calibration
+  tft.fillScreen(TFT_BLACK);
+
+  // Init LED pins
+  for (int i = 0; i < 4; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    digitalWrite(ledPins[i], LOW);
+  }
+
+  drawButtons();
+
+  //Serial.begin(115200);
+ // Wire.begin(21, 22);
+
+  Serial.println("Booting...");
   dht.begin();
   pinMode(DHTPIN, INPUT);
   loadDevices();
 
+  bool wifiConnected = false;
   WiFi.begin(ssid, password);
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    displayStatus("WiFi: " + WiFi.localIP().toString());
-    if (checkForUpdate()) downloadFirmware(firmwareURL);
-    startWebServer();
+    wifiConnected = true;
+    Serial.println("\nWiFi connected. IP: " + WiFi.localIP().toString());
   } else {
-    displayStatus("WiFi Failed");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("Smart_Switch_Pro", "12345678");
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.println("AP Mode Started. IP: " + myIP.toString());
+  }
+
+  if (wifiConnected && checkForUpdate()) {
+    downloadFirmware(firmwareURL);
+  }
+
+  startWebServer();
+}
+void drawButtons() {
+  for (int i = 0; i < 4; i++) {
+    updateButton(i);
   }
 }
 
+void updateButton(int index) {
+  int col = (index % 2);
+  int row = (index / 2);
+  int x = FRAME_X + col * BUTTON_W;
+  int y = FRAME_Y + row * BUTTON_H;
+
+  tft.fillRect(x, y, BUTTON_W - 2, BUTTON_H - 2, ledState[index] ? TFT_GREEN : TFT_RED);
+  tft.drawRect(x, y, BUTTON_W - 2, BUTTON_H - 2, TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, ledState[index] ? TFT_GREEN : TFT_RED);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextFont(2);  // ✅ Add this
+  tft.setTextSize(1);
+  String label = "LED " + String(index + 1);
+  tft.drawString(label, x + (BUTTON_W / 2) - 2, y + (BUTTON_H / 2) - 2);
+}
+
+
+int getButton(int x, int y) {
+  for (int i = 0; i < 4; i++) {
+    int col = (i % 2);
+    int row = (i / 2);
+    int bx = FRAME_X + col * BUTTON_W;
+    int by = FRAME_Y + row * BUTTON_H;
+    if (x > bx && x < bx + BUTTON_W && y > by && y < by + BUTTON_H) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 void loop() {
+  uint16_t x, y;
+
+  // Handle TFT touch input
+ if (tft.getTouch(&x, &y)) {
+  int btn = getButton(x, y);
+  if (btn != -1) {
+    ledState[btn] = !ledState[btn];
+    digitalWrite(ledPins[btn], ledState[btn] ? HIGH : LOW);
+    drawButtons();  // ✅ FIX: update all buttons
+  }
+  delay(300);
+}
+  // Handle web server requests
   server.handleClient();
 
+  // Update DHT sensor data every 5 seconds
   static unsigned long lastDHT = 0;
   if (millis() - lastDHT > 5000) {
     lastDHT = millis();
@@ -502,3 +515,4 @@ void loop() {
     Serial.printf("Temp: %.1f°C  Hum: %.1f%%\n", temperature, humidity);
   }
 }
+
