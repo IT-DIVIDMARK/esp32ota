@@ -61,6 +61,8 @@ uint16_t calData[5] = {275, 3590, 285, 3541, 7};  // Replace with your values
 
 //bool ledState[4] = {false, false, false, false};
 
+int currentDeviceIndex = 0;  // Index of device currently shown
+
 
 // Function Prototypes
 void handleRoot();
@@ -81,6 +83,7 @@ int getButton(int x, int y);
 void drawButtons();
 void drawWiFiStatus();
 void drawDeviceButton(int index);
+void drawCurrentDeviceButton();
 
 // OTA functions (same as before)
 void downloadFirmware(String url) {
@@ -427,8 +430,8 @@ void startWebServer() {
 }
 
 void setup() {
+   drawCurrentDeviceButton();
   Serial.begin(115200);
-
   dht.begin();
   pinMode(DHTPIN, INPUT);
   loadDevices();
@@ -469,30 +472,62 @@ void setup() {
   digitalWrite(devices[i].gpio, devices[i].state ? HIGH : LOW);
 }
 
-  drawButtons();
+ drawCurrentDeviceButton();  // Replaces drawButtons()
   tft.fillScreen(TFT_BLACK);
-drawWiFiStatus();  // Show Wi-Fi icon and IP address
-loadDevices();
-drawButtons();  // Always draw after loading
+  drawWiFiStatus();           // Keep this to show IP
+  loadDevices();              // OK
+  drawCurrentDeviceButton();  // Replaces drawButtons()
 
 
 }
 
-void loop() {
-  uint16_t x, y;
-  if (tft.getTouch(&x, &y)) {
-    int btn = getButton(x, y); // ✅ Declare here
-    if (btn != -1) {
-      devices[btn].state = !devices[btn].state;
-      digitalWrite(devices[btn].gpio, devices[btn].state ? HIGH : LOW);
-      drawDeviceButton(btn);
-      saveDevices();
-    }
-    delay(300);  // Debounce
-  }
 
+void drawDeviceIndex() {
+  tft.setTextDatum(TR_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.drawString(String(currentDeviceIndex + 1) + " / " + String(deviceCount), tft.width() - 4, 4);
+}
+
+  uint16_t x, y;
+static uint16_t lastX = 0;
+static unsigned long lastTouchTime = 0;
+
+void loop() {
   server.handleClient();
 
+  if (tft.getTouch(&x, &y)) {
+    unsigned long now = millis();
+
+    // Detect swipe gesture (horizontal movement)
+    if (lastTouchTime > 0 && (now - lastTouchTime) < 500) {
+      int dx = x - lastX;
+      if (abs(dx) > 80) {
+        if (dx < 0 && currentDeviceIndex < deviceCount - 1) {
+          currentDeviceIndex++;
+        } else if (dx > 0 && currentDeviceIndex > 0) {
+          currentDeviceIndex--;
+        }
+        drawCurrentDeviceButton();
+        delay(300);  // debounce
+      }
+    } else {
+      // If tap in center, toggle switch
+      int btn = getButton(x, y);
+      if (btn != -1 && btn == currentDeviceIndex) {
+        devices[btn].state = !devices[btn].state;
+        digitalWrite(devices[btn].gpio, devices[btn].state ? HIGH : LOW);
+        saveDevices();
+        drawCurrentDeviceButton();
+        delay(300);  // debounce
+      }
+    }
+
+    lastX = x;
+    lastTouchTime = now;
+  }
+
+  // DHT22 periodic read
   static unsigned long lastDHT = 0;
   if (millis() - lastDHT > 5000) {
     lastDHT = millis();
@@ -503,18 +538,16 @@ void loop() {
 }
 
 
-void drawButtons() {
-  tft.fillScreen(TFT_BLACK);
-  for (int i = 0; i < deviceCount; i++) {
-    drawDeviceButton(i);
+void drawCurrentDeviceButton() {
+  tft.fillRect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, TFT_BLACK);
+  if (currentDeviceIndex < deviceCount) {
+    drawDeviceButton(currentDeviceIndex);
   }
 }
-void drawDeviceButton(int index) {
-  int col = (index % 2);
-  int row = (index / 2);
-  int x = FRAME_X + col * BUTTON_W;
-  int y = FRAME_Y + row * BUTTON_H;
 
+void drawDeviceButton(int index) {
+  int x = FRAME_X;
+  int y = FRAME_Y;
   bool state = devices[index].state;
 
   tft.fillRect(x, y, BUTTON_W - 2, BUTTON_H - 2, state ? TFT_GREEN : TFT_RED);
@@ -525,6 +558,7 @@ void drawDeviceButton(int index) {
   String label = devices[index].name;
   tft.drawString(label, x + (BUTTON_W / 2) - 2, y + (BUTTON_H / 2) - 2);
 }
+
 
 
 
