@@ -71,7 +71,7 @@ void handleSensorData();
 void loadDevices();
 void saveDevices();
 void updateDeviceState(int gpio, bool state);
-//void displayStatus(String status);
+void displayStatus(String status);
 void startWebServer();
 void downloadFirmware(String url);
 bool checkForUpdate();
@@ -96,7 +96,7 @@ void downloadFirmware(String url) {
       WiFiClient& client = http.getStream();
       size_t written = Update.writeStream(client);
       if (written == contentLength && Update.end()) {
-       // displayStatus("Updated! Rebooting...");
+       displayStatus("Updated! Rebooting...");
         delay(2000);
         ESP.restart();
       }
@@ -122,6 +122,17 @@ bool checkForUpdate() {
   http.end();
   return false;
 }
+
+
+
+void displayStatus(String msg) {
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.fillRect(0, 0, tft.width(), 30, TFT_BLACK);
+  tft.drawString(msg, tft.width() / 2, 15);
+}
+
 
 // Save/Load Devices
 void saveDevices() {
@@ -444,12 +455,12 @@ void setup() {
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
-    //displayStatus("WiFi: " + WiFi.localIP().toString());
+    displayStatus("WiFi: " + WiFi.localIP().toString());
   } else {
     WiFi.mode(WIFI_AP);
     WiFi.softAP("Smart_Switch_Pro 🛜 ", "12345678");
     IPAddress myIP = WiFi.softAPIP();
-    //displayStatus("AP Mode: " + myIP.toString());
+    displayStatus("AP Mode: " + myIP.toString());
   }
 
   if (wifiConnected && checkForUpdate()) {
@@ -471,6 +482,8 @@ void setup() {
 
   drawButtons();
   tft.fillScreen(TFT_BLACK);
+  Serial.println(WiFi.localIP());
+Serial.println(WiFi.softAPIP());
 drawWiFiStatus();  // Show Wi-Fi icon and IP address
 loadDevices();
 drawButtons();  // Always draw after loading
@@ -548,21 +561,35 @@ void updateButton(int index) {
 
 void drawWiFiStatus() {
   tft.setTextDatum(TL_DATUM);
-  tft.setTextSize(1);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);  // bigger font
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);  // white text, black background
+  tft.fillRect(0, 0, tft.width(), 20, TFT_BLACK);  // clear top bar
 
   if (WiFi.status() == WL_CONNECTED) {
-    tft.drawString("WiFi", 5, 5); 
-    tft.drawString(WiFi.localIP().toString(), 40, 5);
+    tft.drawString("WiFi:", 5, 2);
+    tft.drawString(WiFi.localIP().toString(), 80, 2);
   } else {
-    tft.drawString("D Hotspot", 5, 5);
-    tft.drawString("192.168.4.1", 60, 5); 
+    tft.drawString("AP Mode:", 5, 2);
+    tft.drawString(WiFi.softAPIP().toString(), 100, 2);
   }
 }
 
 
 
+
 int getButton(int x, int y) {
+    tft.setTextDatum(TL_DATUM);
+  tft.setTextSize(2);  // bigger font
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);  // white text, black background
+  tft.fillRect(0, 0, tft.width(), 20, TFT_BLACK);  // clear top bar
+
+  if (WiFi.status() == WL_CONNECTED) {
+    tft.drawString("WiFi:", 5, 2);
+    tft.drawString(WiFi.localIP().toString(), 80, 2);
+  } else {
+    tft.drawString("AP Mode:", 5, 2);
+    tft.drawString(WiFi.softAPIP().toString(), 100, 2);
+  }
   for (int i = 0; i < deviceCount; i++) {
     int col = i % 2;
     int row = i / 2;
